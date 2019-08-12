@@ -4,7 +4,7 @@ import chess
 
 from PyQt5.QtCore import pyqtSlot, Qt
 from PyQt5.QtSvg import QSvgWidget
-from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
 
 
 class MainWindow(QWidget):
@@ -33,6 +33,25 @@ class MainWindow(QWidget):
         self.board = chess.Board()
         self.drawBoard()
 
+        btn = QPushButton('Delete selected piece', self)
+        btn.resize(btn.sizeHint())
+        btn.move(self.boardSize, 50)
+        btn.clicked.connect(self.do_whatever)
+
+        btn = QPushButton('Print board', self)
+        btn.resize(btn.sizeHint())
+        btn.move(self.boardSize, 50)
+        btn.clicked.connect(self.show_raw_board)
+
+    def do_whatever(self):
+        if self.pieceToMove:
+            chess.Board.remove_piece_at(self.board, chess.square(self.pieceToMove[2], self.pieceToMove[3]))
+
+    def show_raw_board(self):
+        print(self.board)
+
+    #chess.SQUARE_NAMES.index(self.pieceToMove[0])
+
     @pyqtSlot(QWidget)
     def mousePressEvent(self, event):
         """
@@ -56,7 +75,7 @@ class MainWindow(QWidget):
                             self.board.push(move)
                         piece = None
                         coordinates = None
-                    self.pieceToMove = [piece, coordinates]
+                    self.pieceToMove = [piece, coordinates, file, rank]
                     self.drawBoard()
 
     def drawBoard(self):
