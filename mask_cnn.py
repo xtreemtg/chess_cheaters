@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import json
 from imgaug import augmenters as iaa
 from tqdm import tqdm
+from os import listdir
+from os.path import isfile, join
 import pandas as pd
 import glob
 from chessconfig import ChessConfig

@@ -2,38 +2,11 @@ from mrcnn import utils
 from skimage.io import imread
 import numpy as np
 import cv2
+import json
 
-
-def rle_encode(img, min_max_threshold=1e-3, max_mean_threshold=None):
-    '''
-    img: numpy array, 1 - mask, 0 - background
-    Returns run length as string formated
-    '''
-    if np.max(img) < min_max_threshold:
-        return '' ## no need to encode if it's all zeros
-    if max_mean_threshold and np.mean(img) > max_mean_threshold:
-        return '' ## ignore overfilled mask
-    pixels = img.T.flatten()
-    pixels = np.concatenate([[0], pixels, [0]])
-    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
-    runs[1::2] -= runs[::2]
-    return ' '.join(str(x) for x in runs)
-
-
-def rle_decode(mask_rle, shape=(768, 768)):
-    '''
-    mask_rle: run-length as string formated (start length)
-    shape: (height,width) of array to return
-    Returns numpy array, 1 - mask, 0 - background
-    '''
-    s = mask_rle.split()
-    starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
-    starts -= 1
-    ends = starts + lengths
-    img = np.zeros(shape[0]*shape[1], dtype=np.uint8)
-    for lo, hi in zip(starts, ends):
-        img[lo:hi] = 1
-    return img.reshape(shape).T  # Needed to align to RLE direction
+CLASS_DICT = {'white_bishop': 1, 'black_bishop': 2, 'white_king': 3, 'black_king': 4,
+              'white_queen': 5, 'black_queen': 6, 'white_pawn': 7, 'black_pawn': 8,
+              'white_castle': 9, 'black_castle': 10, 'white_knight': 11, 'black_knight': 12}
 
 
 class ChessDataset(utils.Dataset):
@@ -77,7 +50,18 @@ class ChessDataset(utils.Dataset):
     def load_mask(self, image_id):
         info = self.image_info[image_id]
         annotations = info.get('annotations', [])
-        polylines = annotations.get('region_shape_attributes', [])
-        print(len(polylines))
-
+        count = len(annotations)
+        if count == 0:
+            mask = np.zeros((info['orig_height'], info['orig_width'], 1), dtype=np.uint8)
+            class_ids = np.zeros((1,), dtype=np.int32)
+        else:
+            mask = np.zeros((info['orig_height'], info['orig_width'], count), dtype=np.uint8)
+            class_ids = np.zeros((count,), dtype=np.int32)
+            for i, a in enumerate(annotations):
+                polyline_dict = json.loads(annotations[i].get('region_shape_attributes', []))
+                x_points = 0.1*np.array(polyline_dict['all_points_x'])
+                y_points = 0.1*np.array(polyline_dict['all_points_y'])
+                vertices = np.array([x for x in zip(x_points, y_points)], 'int32')
+                cv2.fillConvexPoly(mask[:, :, i], vertices, 255)
+                class_ids[i] = CLASS_DICT[json.loads(annotations[i]['region_attributes'])['name']]
         return mask.astype(np.bool), class_ids.astype(np.int32)

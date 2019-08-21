@@ -15,7 +15,7 @@ class ChessConfig(Config):
     NUM_CLASSES = 13  # background + 12 pieces classes
 
     IMAGE_MIN_DIM = 256
-    IMAGE_MAX_DIM = 4032
+    IMAGE_MAX_DIM = 448
     RPN_ANCHOR_SCALES = (16, 32, 64, 128)
     TRAIN_ROIS_PER_IMAGE = 32
     MAX_GT_INSTANCES = 4
