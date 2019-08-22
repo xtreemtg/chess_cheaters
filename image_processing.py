@@ -1,67 +1,12 @@
 import cv2
-import operator
 import numpy as np
 from matplotlib import pyplot as plt
+from sklearn.linear_model import LinearRegression
+import operator
 
 
-def plot_many_images(images, titles, rows=1, columns=2):
-    """Plots each image in a given list as a grid structure. using Matplotlib."""
-    for i, image in enumerate(images):
-        plt.subplot(rows, columns, i + 1)
-        plt.imshow(image, 'gray')
-        plt.title(titles[i])
-        plt.xticks([]), plt.yticks([])  # Hide tick marks
-    plt.show()
-
-
-def show_image(img):
-    """Shows an image until any key is pressed"""
-    cv2.imshow('image', img)  # Display the image
-    cv2.waitKey(0)  # Wait for any key to be pressed (with the image window active)
-    cv2.destroyAllWindows()  # Close all windows
-
-
-def convert_when_colour(colour, img):
-    """Dynamically converts an image to colour if the input colour is a tuple and the image is grayscale."""
-    if len(colour) == 3:
-        if len(img.shape) == 2:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        elif img.shape[2] == 1:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    return img
-
-
-def display_points(in_img, points, radius=5, colour=(0, 0, 255)):
-    """Draws circular points on an image."""
-    img = in_img.copy()
-
-    # Dynamically change to a colour image if necessary
-    if len(colour) == 3:
-        if len(img.shape) == 2:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        elif img.shape[2] == 1:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-
-    for point in points:
-        img = cv2.circle(img, tuple(int(x) for x in point), radius, colour, -1)
-    show_image(img)
-    return img
-
-
-def display_rects(in_img, rects, colour=(0, 0, 255)):
-    """Displays rectangles on the image."""
-    img = convert_when_colour(colour, in_img.copy())
-    for rect in rects:
-        img = cv2.rectangle(img, tuple(int(x) for x in rect[0]), tuple(int(x) for x in rect[1]), colour)
-    show_image(img)
-    return img
-
-
-def display_contours(in_img, contours, colour=(0, 0, 255), thickness=2):
-    """Displays contours on the image."""
-    img = convert_when_colour(colour, in_img.copy())
-    img = cv2.drawContours(img, contours, -1, colour, thickness)
-    show_image(img)
+FILTER_THRESHOLD = 0.25
+NBINS = 18
 
 
 def pre_process_image(img, skip_dilate=False):
@@ -69,7 +14,7 @@ def pre_process_image(img, skip_dilate=False):
 
     # Gaussian blur with a kernal size (height, width) of 9.
     # Note that kernal sizes must be positive and odd and the kernel must be square.
-    proc = cv2.GaussianBlur(img.copy(), (9, 9), 0)
+    proc = cv2.GaussianBlur(img.copy(), (19, 19), 0)
 
     # Adaptive threshold using 11 nearest neighbour pixels
     proc = cv2.adaptiveThreshold(proc, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
@@ -109,11 +54,27 @@ def find_corners_of_largest_polygon(img):
     return [polygon[top_left][0], polygon[top_right][0], polygon[bottom_right][0], polygon[bottom_left][0]]
 
 
+def infer_grid(img, side_len=8):
+    """Infers 64 cell grid from a square image."""
+    squares = []
+    side = img.shape[:1]
+    side = side[0] / side_len
+    for i in range(side_len):
+        for j in range(side_len):
+            p1 = (i * side, j * side)  # Top left corner of a bounding box
+            p2 = ((i + 1) * side, (j + 1) * side)  # Bottom right corner of bounding box
+            squares.append((p1, p2))
+    return squares
+
+
+def cut_from_rect(img, rect):
+    """Cuts a rectangle from an image using the top left and bottom right points."""
+    return img[int(rect[0][1]):int(rect[1][1]), int(rect[0][0]):int(rect[1][0])]
+
+
 def distance_between(p1, p2):
     """Returns the scalar distance between two points"""
-    a = p2[0] - p1[0]
-    b = p2[1] - p1[1]
-    return np.sqrt((a ** 2) + (b ** 2))
+    return np.linalg.norm(p2 - p1)
 
 
 def crop_and_warp(img, crop_rect):
@@ -143,130 +104,185 @@ def crop_and_warp(img, crop_rect):
     return cv2.warpPerspective(img, m, (int(side), int(side)))
 
 
-def infer_grid(img):
-    """Infers 81 cell grid from a square image."""
-    SIDES_COUNT = 8
-    squares = []
-    side = img.shape[:1]
-    side = side[0] / SIDES_COUNT
+def embed_sqaures(cropped, squares):
+    result = cropped.copy()
+    for square in squares:
+        s1 = [int(np.round(s)) for s in square[0]]
+        s2 = [int(np.round(s)) for s in square[1]]
+        cv2.rectangle(result, tuple(s1), tuple(s2), (255, 255, 0), 7)
 
-    # Note that we swap j and i here so the rectangles are stored in the list reading left-right instead of top-down.
-    for j in range(SIDES_COUNT):
-        for i in range(SIDES_COUNT):
-            p1 = (i * side, j * side)  # Top left corner of a bounding box
-            p2 = ((i + 1) * side, (j + 1) * side)  # Bottom right corner of bounding box
-            squares.append((p1, p2))
-    return squares
+    return result
 
 
-def cut_from_rect(img, rect):
-    """Cuts a rectangle from an image using the top left and bottom right points."""
-    return img[int(rect[0][1]):int(rect[1][1]), int(rect[0][0]):int(rect[1][0])]
+def create_lines(cropped):
+    edges = pre_process_image(cropped)
+    lines_pic = np.zeros(cropped.shape)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 10, maxLineGap=10)
+
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        cv2.line(lines_pic, (x1, y1), (x2, y2), (255, 0, 0), 1)
+    return lines, lines_pic
 
 
-def scale_and_centre(img, size, margin=0, background=0):
-    """Scales and centres an image onto a new background square."""
-    h, w = img.shape[:2]
+def lines_distance(line):
+    p1 = line[:2]
+    p2 = line[-2:]
+    return distance_between(p1, p2)
 
-    def centre_pad(length):
-        """Handles centering for a given length that may be odd or even."""
-        if length % 2 == 0:
-            side1 = int((size - length) / 2)
-            side2 = side1
-        else:
-            side1 = int((size - length) / 2)
-            side2 = side1 + 1
-        return side1, side2
 
-    def scale(r, x):
-        return int(r * x)
+def is_horizontal(line):
+    p1 = line[:2]
+    p2 = line[-2:]
+    return np.abs(p2[0] - p1[0]) > np.abs(p2[1] - p1[1])
 
-    if h > w:
-        t_pad = int(margin / 2)
-        b_pad = t_pad
-        ratio = (size - margin) / h
-        w, h = scale(ratio, w), scale(ratio, h)
-        l_pad, r_pad = centre_pad(w)
+
+def plot_lines(lines, shape, img=None):
+    lines_pic = np.zeros(shape)
+    color = (255, 0, 0)
+    if type(img) == np.ndarray:
+        color = (0, 255, 0)
+        lines_pic = img
+    for line in lines:
+        x1, y1, x2, y2 = line.ravel()
+        cv2.line(lines_pic, (x1, y1), (x2, y2), color, 3)
+    return lines_pic
+    # plt.figure(figsize=(15,15))
+    # plt.imshow(lines_pic, cmap='gray')
+
+
+def drop_useless_lines(lines):
+    to_drop = []
+    diffs = [lines[n][1] - lines[n - 1][1] for n in range(1, len(lines))]
+    median = np.median(diffs)
+    for i, diff in enumerate(diffs):
+        if diff < median / 2:
+            to_drop.append(i + 1)
+    if len(to_drop) > 0:
+        return [i for j, i in enumerate(lines) if j not in to_drop]
     else:
-        l_pad = int(margin / 2)
-        r_pad = l_pad
-        ratio = (size - margin) / w
-        w, h = scale(ratio, w), scale(ratio, h)
-        t_pad, b_pad = centre_pad(h)
-
-    img = cv2.resize(img, (w, h))
-    img = cv2.copyMakeBorder(img, t_pad, b_pad, l_pad, r_pad, cv2.BORDER_CONSTANT, None, background)
-    return cv2.resize(img, (size, size))
+        return lines
 
 
-def find_largest_feature(inp_img, scan_tl=None, scan_br=None):
-    """
-    Uses the fact the `floodFill` function returns a bounding box of the area it filled to find the biggest
-    connected pixel structure in the image. Fills this structure in white, reducing the rest to black.
-    """
-    img = inp_img.copy()  # Copy the image, leaving the original untouched
-    height, width = img.shape[:2]
-
-    max_area = 0
-    seed_point = (None, None)
-
-    if scan_tl is None:
-        scan_tl = [0, 0]
-
-    if scan_br is None:
-        scan_br = [width, height]
-
-    # Loop through the image
-    for x in range(scan_tl[0], scan_br[0]):
-        for y in range(scan_tl[1], scan_br[1]):
-            # Only operate on light or white squares
-            if img.item(y, x) == 255 and x < width and y < height:  # Note that .item() appears to take input as y, x
-                area = cv2.floodFill(img, None, (x, y), 64)
-                if area[0] > max_area:  # Gets the maximum bound area which should be the grid
-                    max_area = area[0]
-                    seed_point = (x, y)
-
-    # Colour everything grey (compensates for features outside of our middle scanning range
-    for x in range(width):
-        for y in range(height):
-            if img.item(y, x) == 255 and x < width and y < height:
-                cv2.floodFill(img, None, (x, y), 64)
-
-    mask = np.zeros((height + 2, width + 2), np.uint8)  # Mask that is 2 pixels bigger than the image
-
-    # Highlight the main feature
-    if all([p is not None for p in seed_point]):
-        cv2.floodFill(img, mask, seed_point, 255)
-
-    top, bottom, left, right = height, 0, width, 0
-
-    for x in range(width):
-        for y in range(height):
-            if img.item(y, x) == 64:  # Hide anything that isn't the main feature
-                cv2.floodFill(img, mask, (x, y), 0)
-
-            # Find the bounding parameters
-            if img.item(y, x) == 255:
-                top = y if y < top else top
-                bottom = y if y > bottom else bottom
-                left = x if x < left else left
-                right = x if x > right else right
-
-    bbox = [[left, top], [right, bottom]]
-    return img, np.array(bbox, dtype='float32'), seed_point
+def filter_lines(lines):
+    distances = [lines_distance(line.ravel()) for line in lines]
+    threshold_distance = FILTER_THRESHOLD * np.max(distances)
+    filtered_lines = []
+    for coords, dist in zip(lines, distances):
+        if dist > threshold_distance:
+            filtered_lines.append(coords)
+    return filtered_lines
 
 
-def parse_grid(path):
-    original = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-    # original = cv2.resize(original, (0,0), fx=0.1, fy=0.1, interpolation=cv2.INTER_CUBIC)
+def split_horizontal_vertical(lines):
+    horizontal_lines = []
+    vertical_lines = []
+    for line in lines:
+        line = line.ravel()
+        if is_horizontal(line):
+            horizontal_lines.append(line)
+        else:
+            vertical_lines.append(line)
+    return horizontal_lines, vertical_lines
+
+
+def create_bins(lower_bound, width, quantity):
+    inter_width = int(np.round(width / quantity))
+    bins = []
+    for low in range(lower_bound,
+                     lower_bound + quantity * inter_width + 1, inter_width):
+        bins.append((low, low + inter_width))
+    return bins
+
+
+def find_bin(value, bins):
+    for i in range(0, len(bins)):
+        if bins[i][0] <= value < bins[i][1]:
+            return i
+    return -1
+
+
+def create_binned_points(lines, bins, search_index):
+    result = [None for _ in range(NBINS + 1)]
+    for line in lines:
+        p1 = line[:2]
+        p2 = line[-2:]
+        p_range = [p1, p2] if search_index else [(p1[1], p1[0]), (p2[1], p2[0])]
+        for p in p_range:
+            arr_id = find_bin(p[1], bins)
+            if arr_id >= 0:
+                if result[arr_id]:
+                    result[arr_id].append(p)
+                else:
+                    result[arr_id] = [p]
+    return result
+
+
+def create_lin_models(points):
+    lin_models = []
+    for i in range(18):
+        if points[i]:
+            X = np.array(points[i])[:, 0].reshape(-1, 1)
+            y = np.array(points[i])[:, 1]
+            lin_model = LinearRegression().fit(X, y)
+            lin_models.append([lin_model.coef_, lin_model.intercept_])
+    return lin_models
+
+
+def build_grid(horizontal_lines, vertical_lines, img):
+    bins = create_bins(0, img.shape[1], NBINS)
+    horizontal_points = create_binned_points(horizontal_lines, bins, 1)
+    vertical_points = create_binned_points(vertical_lines, bins, 0)
+
+    horizontal_lin_models = drop_useless_lines(create_lin_models(horizontal_points))
+    vertical_lin_models = drop_useless_lines(create_lin_models(vertical_points))
+
+    while len(drop_useless_lines(horizontal_lin_models)) < len(horizontal_lin_models):
+        horizontal_lin_models = drop_useless_lines(horizontal_lin_models)
+
+    while len(drop_useless_lines(vertical_lin_models)) < len(vertical_lin_models):
+        vertical_lin_models = drop_useless_lines(vertical_lin_models)
+
+    final_lines = []
+    for lin_model in horizontal_lin_models:
+        if lin_model:
+            coeff = lin_model[0]
+            intercept = int(np.round(lin_model[1]))
+            final_lines.append(
+                np.array([0, intercept, img.shape[0], intercept + int(np.round(coeff * img.shape[0]))]))
+    for lin_model in vertical_lin_models:
+        if lin_model:
+            coeff = lin_model[0]
+            intercept = int(np.round(lin_model[1]))
+            final_lines.append(
+                np.array([intercept, 0, intercept + int(np.round(coeff * img.shape[0])), img.shape[1]]))
+    return final_lines
+
+
+def main():
+    original = cv2.imread('pics/IMG_1478.jpg', cv2.IMREAD_GRAYSCALE)
     processed = pre_process_image(original)
-    plt.figure(figsize=(10, 10))
-    plt.imshow(processed, cmap='gray')
-    plt.show()
     corners = find_corners_of_largest_polygon(processed)
     cropped = crop_and_warp(original, corners)
     squares = infer_grid(cropped)
-    plt.figure(figsize=(10, 10))
-    plt.imshow(cropped, cmap='gray')
+    grid_lines = embed_sqaures(cropped, squares)
+    hough_lines, hough_lines_pic = create_lines(cropped)
+
+    fig, ax = plt.subplots(2, 2,figsize=(15,15))
+
+    ax[0, 0].imshow(original, cmap='gray')
+    ax[0, 1].imshow(cropped, cmap='gray')
+    ax[1, 0].imshow(hough_lines_pic, cmap='gray')
+    ax[1, 1].imshow(grid_lines, cmap='gray')
     plt.show()
-    return squares
+
+    filtered_lines = filter_lines(hough_lines)
+    horizontal_lines, vertical_lines = split_horizontal_vertical(filtered_lines)
+    grid = build_grid(horizontal_lines, vertical_lines, cropped)
+
+    plt.figure(figsize=(15, 15))
+    plt.imshow(plot_lines(grid, cropped.shape, cropped), cmap='gray')
+
+
+if __name__ == '__main__':
+    main()
