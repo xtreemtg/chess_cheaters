@@ -1,17 +1,36 @@
 import sys
 
 import chess
+import chess.engine
+from stockfish import Stockfish
+
+from FEN_convertor import FEN_convertor
 
 from PyQt5.QtCore import pyqtSlot, Qt
 from PyQt5.QtSvg import QSvgWidget
 from PyQt5.QtWidgets import QApplication, QWidget
+
+import threading
+import queue
+
+sf_file = '/Users/xtreemtg888/Downloads/stockfish-10-mac/Mac/stockfish-10-64'
+
+# my_queue = queue.Queue()
+#
+#
+# def storeInQueue(f):
+#     def wrapper(*args):
+#         my_queue.put(f(*args))
+#
+#     return wrapper
 
 
 class MainWindow(QWidget):
     """
     Create a surface for the chessboard.
     """
-    def __init__(self):
+
+    def __init__(self, board, stockfish):
         """
         Initialize the chessboard.
         """
@@ -29,9 +48,28 @@ class MainWindow(QWidget):
         self.margin = 0.05 * self.boardSize if self.coordinates else 0
         self.squareSize = (self.boardSize - 2 * self.margin) / 8.0
         self.pieceToMove = [None, None]
+        self.second_click = None
 
-        self.board = chess.Board()
+        self.board = board
+        self.engine = stockfish
+        self.engine_pred_move()
         self.drawBoard()
+
+
+    def engine_pred_move(self):
+        print('predicting moves..')
+        moves = []
+        count = 0
+        predict_board = self.board.copy()
+        while not predict_board.is_game_over() and count < 10:
+            result = engine.play(predict_board, chess.engine.Limit(time = 0.2))
+            move = result.move
+            moves.append(move)
+            predict_board.push(move)
+            count += 1
+        moves = self.board.variation_san(moves)
+        print(moves)
+        return moves
 
     @pyqtSlot(QWidget)
     def mousePressEvent(self, event):
@@ -50,6 +88,7 @@ class MainWindow(QWidget):
                     square = chess.square(file, rank)
                     piece = self.board.piece_at(square)
                     coordinates = "{}{}".format(chr(file + 97), str(rank + 1))
+                    self.second_click = self.pieceToMove[0]
                     if self.pieceToMove[0] is not None:
                         move = chess.Move.from_uci("{}{}".format(self.pieceToMove[1], coordinates))
                         if move in self.board.legal_moves:
@@ -58,6 +97,11 @@ class MainWindow(QWidget):
                         coordinates = None
                     self.pieceToMove = [piece, coordinates]
                     self.drawBoard()
+                    if self.second_click:
+                        t = threading.Thread(target=self.engine_pred_move)
+                        t.start()
+                        # my_data = my_queue.get()
+                        # print(my_data)
 
     def drawBoard(self):
         """
@@ -71,7 +115,25 @@ class MainWindow(QWidget):
 
 
 if __name__ == "__main__":
+    matrix = [
+        ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+        ['p', '.', 'p', 'p', 'p', 'p', 'p', 'p'],
+        ['.', '.', '.', '.', '.', '.', '.', '.'],
+        ['.', '.', '.', '.', '.', '.', '.', '.'],
+        ['.', '.', '.', '.', '.', '.', '.', '.'],
+        ['.', '.', '.', '.', 'R', '.', '.', '.'],
+        ['P', 'P', 'P', 'P', 'P', 'P', 'P', '.'],
+        ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+
+    ]
+
+    cnvrtr = FEN_convertor(matrix)
+    result = cnvrtr.convert('white')
+    engine = chess.engine.SimpleEngine.popen_uci(sf_file)
+    print(result)
+
+    OG = chess.Board(result)
     chessGui = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(OG, engine)
     window.show()
     sys.exit(chessGui.exec_())
