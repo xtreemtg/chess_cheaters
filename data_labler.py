@@ -8,22 +8,12 @@ from FEN_convertor import FEN_convertor
 
 from PyQt5.QtCore import pyqtSlot, Qt
 from PyQt5.QtSvg import QSvgWidget
-from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 
 import threading
 import queue
 
 sf_file = '/Users/xtreemtg888/Downloads/stockfish-10-mac/Mac/stockfish-10-64'
-
-# my_queue = queue.Queue()
-#
-#
-# def storeInQueue(f):
-#     def wrapper(*args):
-#         my_queue.put(f(*args))
-#
-#     return wrapper
-
 
 class MainWindow(QWidget):
     """
@@ -52,24 +42,29 @@ class MainWindow(QWidget):
 
         self.board = board
         self.engine = stockfish
+        self.predict_label = QLabel('test', self)
+        self.predict_label.move(50, 600)
         self.engine_pred_move()
         self.drawBoard()
 
 
     def engine_pred_move(self):
-        print('predicting moves..')
+        self.predict_label.setText('predicting moves..')
+        self.predict_label.adjustSize()
         moves = []
         count = 0
         predict_board = self.board.copy()
         while not predict_board.is_game_over() and count < 10:
-            result = engine.play(predict_board, chess.engine.Limit(time = 0.2))
+            result = engine.play(predict_board, chess.engine.Limit(time = 0.1))
             move = result.move
             moves.append(move)
             predict_board.push(move)
             count += 1
         moves = self.board.variation_san(moves)
-        print(moves)
-        return moves
+        NEXT_MOVES = 'Next few predicted moves:\n'
+        self.predict_label.setText(NEXT_MOVES + moves)
+        self.predict_label.adjustSize()
+
 
     @pyqtSlot(QWidget)
     def mousePressEvent(self, event):
@@ -100,8 +95,6 @@ class MainWindow(QWidget):
                     if self.second_click:
                         t = threading.Thread(target=self.engine_pred_move)
                         t.start()
-                        # my_data = my_queue.get()
-                        # print(my_data)
 
     def drawBoard(self):
         """
@@ -116,14 +109,14 @@ class MainWindow(QWidget):
 
 if __name__ == "__main__":
     matrix = [
-        ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
-        ['p', '.', 'p', 'p', 'p', 'p', 'p', 'p'],
+        ['.', 'K', '.', '.', 'k', '.', '.', '.'],
         ['.', '.', '.', '.', '.', '.', '.', '.'],
         ['.', '.', '.', '.', '.', '.', '.', '.'],
         ['.', '.', '.', '.', '.', '.', '.', '.'],
-        ['.', '.', '.', '.', 'R', '.', '.', '.'],
-        ['P', 'P', 'P', 'P', 'P', 'P', 'P', '.'],
-        ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ['.', '.', '.', '.', '.', '.', '.', '.'],
+        ['.', '.', '.', '.', '.', '.', '.', '.'],
+        ['.', '.', '.', 'p', '.', '.', '.', '.'],
+        ['.', '.', '.', '.', '.', '.', '.', 'R']
 
     ]
 
@@ -135,5 +128,6 @@ if __name__ == "__main__":
     OG = chess.Board(result)
     chessGui = QApplication(sys.argv)
     window = MainWindow(OG, engine)
+
     window.show()
     sys.exit(chessGui.exec_())
