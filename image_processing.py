@@ -3,10 +3,13 @@ import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 import operator
+from shapely.geometry import LineString
+import sympy
 
 
-FILTER_THRESHOLD = 0.25
+FILTER_THRESHOLD = 0.2
 NBINS = 18
+TEST_IMG_NAME = 'pics/IMG_1462.JPG'
 
 
 def pre_process_image(img, skip_dilate=False):
@@ -33,7 +36,7 @@ def pre_process_image(img, skip_dilate=False):
 
 def find_corners_of_largest_polygon(img):
     """Finds the 4 extreme corners of the largest contour in the image."""
-    _, contours, h = cv2.findContours(img.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # Find contours
+    contours, h = cv2.findContours(img.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # Find contours
     contours = sorted(contours, key=cv2.contourArea, reverse=True)  # Sort by area, descending
     polygon = contours[0]  # Largest image
 
@@ -248,19 +251,48 @@ def build_grid(horizontal_lines, vertical_lines, img):
         if lin_model:
             coeff = lin_model[0]
             intercept = int(np.round(lin_model[1]))
-            final_lines.append(
-                np.array([0, intercept, img.shape[0], intercept + int(np.round(coeff * img.shape[0]))]))
+            final_lines.append(np.array([0, intercept, img.shape[0], intercept + int(np.round(coeff * img.shape[0]))]))
     for lin_model in vertical_lin_models:
         if lin_model:
             coeff = lin_model[0]
             intercept = int(np.round(lin_model[1]))
-            final_lines.append(
-                np.array([intercept, 0, intercept + int(np.round(coeff * img.shape[0])), img.shape[1]]))
+            final_lines.append(np.array([intercept, 0, intercept + int(np.round(coeff * img.shape[0])), img.shape[1]]))
     return final_lines
 
 
+def create_intersections(grid):
+    ls_vertical = [LineString([line[:2], line[-2:]]) for line in grid[-int(len(grid) / 2):]]
+    ls_horizontal = [LineString([line[:2], line[-2:]]) for line in grid[:int(len(grid) / 2)]]
+
+    intersections = []
+
+    for vertical in ls_vertical:
+        for horizontal in ls_horizontal:
+            pt = vertical.intersection(horizontal)
+            intersections.append((int(pt.x), int(pt.y)))
+    return intersections
+
+
+def create_smart_squares(intersections):
+    side_len = int(np.sqrt(len(intersections)))
+    smart_squares = [[None for _ in range(side_len - 1)] for _ in range(side_len - 1)]
+    for i in range(8):
+        for j in range(8):
+            smart_squares[j][i] = intersections[i * side_len + j], intersections[(i + 1) * side_len + j + 1]
+    return smart_squares
+
+
+def plot_smart_squares(img, smart_squares):
+    n = len(smart_squares[0])
+    fig, ax = plt.subplots(n, n, figsize=(10, 10))
+    for i in range(n):
+        for j in range(n):
+            ax[i, j].imshow(cut_from_rect(img, smart_squares[i][j]), cmap='gray')
+    plt.show()
+
+
 def main():
-    original = cv2.imread('pics/IMG_1478.jpg', cv2.IMREAD_GRAYSCALE)
+    original = cv2.imread(TEST_IMG_NAME, cv2.IMREAD_GRAYSCALE)
     processed = pre_process_image(original)
     corners = find_corners_of_largest_polygon(processed)
     cropped = crop_and_warp(original, corners)
@@ -268,7 +300,7 @@ def main():
     grid_lines = embed_sqaures(cropped, squares)
     hough_lines, hough_lines_pic = create_lines(cropped)
 
-    fig, ax = plt.subplots(2, 2,figsize=(15,15))
+    fig, ax = plt.subplots(2, 2, figsize=(15, 15))
 
     ax[0, 0].imshow(original, cmap='gray')
     ax[0, 1].imshow(cropped, cmap='gray')
@@ -282,6 +314,11 @@ def main():
 
     plt.figure(figsize=(15, 15))
     plt.imshow(plot_lines(grid, cropped.shape, cropped), cmap='gray')
+    plt.show()
+
+    intersections = create_intersections(grid)
+    smart_squares = create_smart_squares(intersections)
+    plot_smart_squares(cropped, smart_squares)
 
 
 if __name__ == '__main__':
