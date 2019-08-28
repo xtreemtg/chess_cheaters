@@ -313,6 +313,25 @@ def convert_to_board(hm):
     return board
 
 
+def do_magic(path):
+    original = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    processed = pre_process_image(original)
+    corners = find_corners_of_largest_polygon(processed)
+    cropped = crop_and_warp(original, corners)
+    hough_lines, hough_lines_pic = create_lines(cropped)
+
+    filtered_lines = filter_lines(hough_lines)
+    horizontal_lines, vertical_lines = split_horizontal_vertical(filtered_lines)
+    grid = build_grid(horizontal_lines, vertical_lines, cropped)
+
+    intersections = create_intersections(grid)
+    smart_squares = create_smart_squares(intersections)
+
+    hm = heat_map(cropped, smart_squares)
+    board = convert_to_board(hm)
+    return board
+
+
 def main():
     original = cv2.imread(TEST_IMG_NAME, cv2.IMREAD_GRAYSCALE)
     processed = pre_process_image(original)
