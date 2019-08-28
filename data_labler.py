@@ -8,14 +8,15 @@ from FEN_convertor import FEN_convertor
 
 from PyQt5.QtCore import pyqtSlot, Qt
 from PyQt5.QtSvg import QSvgWidget
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QInputDialog, QCheckBox, QMessageBox
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QInputDialog, QMessageBox, QLineEdit
+from image_processing import do_magic
 
 import faulthandler
+import time
 
 faulthandler.enable()
 
 import threading
-import concurrent.futures
 
 sf_file = '/Users/xtreemtg888/Downloads/stockfish-10-mac/Mac/stockfish-10-64'
 komodo_file = '/Users/xtreemtg888/Downloads/komodo-10_ae4bdf/OSX/komodo-10-64-osx'
@@ -24,7 +25,9 @@ engine2 = chess.engine.SimpleEngine.popen_uci(komodo_file)
 STOCKFISH = 'stockfish'
 KOMODO = 'komodo'
 ENGINES = {STOCKFISH: engine, KOMODO: engine2}
-LOCK = threading.Lock()
+LOCK = threading.RLock()
+PLAYER = 'white'
+CHESSGUI = None
 
 
 class MainWindow(QWidget):
@@ -64,9 +67,48 @@ class MainWindow(QWidget):
         button.setToolTip('Take back a move')
         button.move(650, 75)
         button.clicked.connect(self.take_back)
-        self.predict_threads()
-        self.C = 0
+        self.load_image = QPushButton('Load image', self)
+        self.load_image.setToolTip('Load an image')
+        self.load_image.move(650, 115)
+        self.load_image.clicked.connect(self.get_image_path)
         self.drawBoard()
+        if not self.check_position():
+            self.predict_threads()
+        self.image_path = None
+
+
+    def get_image_path(self):
+        text, okPressed = QInputDialog.getText(self, "", "Path_to_image:", QLineEdit.Normal, "")
+        if okPressed and text != '':
+            try:
+                matrix = do_magic(text)
+                # matrix = [
+                #     ['.', '.', '.', '.', '.', '.', '.', '.'],
+                #     ['.', '.', '.', '.', '.', '.', '.', '.'],
+                #     ['.', '.', '.', '.', '.', '.', '.', '.'],
+                #     ['.', '.', '.', '.', '.', 'K', '.', '.'],
+                #     ['.', '.', '.', 'k', '.', '.', '.', '.'],
+                #     ['.', '.', '.', '.', 'r', '.', '.', '.'],
+                #     ['.', '.', '.', '.', '.', '.', '.', '.'],
+                #     ['.', '.', '.', '.', '.', '.', '.', '.']
+                #
+                # ]
+                print(matrix)
+
+                cnvrtr = FEN_convertor(matrix)
+                result = cnvrtr.convert(PLAYER)
+                self.board = chess.Board(result)
+                self.arrows = []
+                self.drawBoard()
+                #threading.Thread(target=self.check_position).start():
+                if not self.check_position():
+                    self.predict_threads()
+            except AttributeError as e:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText(str(e))
+                msg.exec_()
+
 
     def predict_threads(self):
         t1 = threading.Thread(target=self.engine_pred_move, args=(STOCKFISH, self.predict_label1))
@@ -86,7 +128,11 @@ class MainWindow(QWidget):
             moves.append(move)
             predict_board.push(move)
             count += 1
-        if engine_name == STOCKFISH and len(moves) > 0:
+        right_color = (PLAYER == 'white' and self.board.turn == chess.WHITE) or \
+                      (PLAYER == 'black' and self.board.turn == chess.BLACK)
+        if engine_name == STOCKFISH and len(moves) > 0 and right_color:
+            if len(moves) == 1 or len(moves) == 2:
+                time.sleep(0.6)
             self.pred_arrows(moves[0])
         moves = self.board.variation_san(moves)
         NEXT_MOVES = f'{engine_name} predicted moves:\n'
@@ -117,7 +163,15 @@ class MainWindow(QWidget):
             return None
 
     def check_position(self):
-        if self.board.is_checkmate():
+        status = str(self.board.status())
+        print(status)
+        if self.board.status() != chess.STATUS_VALID:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText(status)
+            msg.exec_()
+            return False
+        elif self.board.is_checkmate():
             self.result_label.setText('checkmate!')
             self.result_label.adjustSize()
         elif self.board.is_stalemate():
@@ -173,10 +227,11 @@ class MainWindow(QWidget):
                         if move in self.board.legal_moves:
                             self.board.push(move)
                             self.predict_threads()
-                        piece = None
-                        coordinates = None
-                        self.drawBoard()
-                        threading.Thread(target=self.check_position).start()
+                            self.arrows = []
+                            piece = None
+                            coordinates = None
+                            self.drawBoard()
+                            threading.Thread(target=self.check_position).start()
                     self.pieceToMove = [piece, coordinates]
 
     def render_lock(self, board, lastmove, check):
@@ -200,30 +255,39 @@ class MainWindow(QWidget):
         self.render_lock(board, lastmove, check)
         return self.drawBoardSvg
 
-
-if __name__ == "__main__":
+def load(matrix = None):
     print(sys.executable)
     matrix = [
-        ['.', 'r', '.', 'n', '.', '.', '.', '.'],
-        ['.', '.', '.', 'P', 'k', '.', '.', '.'],
-        ['.', '.', 'P', '.', '.', '.', 'N', 'Q'],
+        ['.', '.', '.', '.', '.', '.', 'k', '.'],
+        ['.', 'p', '.', '.', '.', 'p', 'p', 'p'],
         ['.', '.', '.', '.', '.', '.', '.', '.'],
-        ['.', '.', '.', '.', '.', '.', '.', '.'],
-        ['.', '.', '.', '.', '.', '.', '.', '.'],
-        ['.', '.', '.', '.', '.', '.', 'p', '.'],
-        ['K', '.', '.', '.', '.', '.', 'N', '.']
+        ['.', '.', 'p', '.', 'p', '.', 'r', '.'],
+        ['.', '.', '.', '.', '.', '.', '.', 'n'],
+        ['.', 'P', 'N', '.', '.', '.', '.', '.'],
+        ['R', '.', 'P', 'r', '.', 'P', 'P', 'P'],
+        ['.', '.', '.', '.', 'R', '.', 'K', '.']
 
-    ]
+    ] if not matrix else matrix
+
 
     cnvrtr = FEN_convertor(matrix)
-    result = cnvrtr.convert('black')
-    engine = chess.engine.SimpleEngine.popen_uci(sf_file)
-    engine2 = chess.engine.SimpleEngine.popen_uci(komodo_file)
+    result = cnvrtr.convert(PLAYER)
     print(result)
+    # result = "4N2R/4P3/2b1Q1NP/4P3/p4P2/p2K4/4r3/n2k2B1 w - - 0 1"
 
     OG = chess.Board(result)
-    chessGui = QApplication(sys.argv)
-    window = MainWindow(OG)
+    global CHESSGUI
+    if not CHESSGUI:
+        CHESSGUI = QApplication(sys.argv)
+    else:
+        CHESSGUI.exit()
+        CHESSGUI = QApplication(sys.argv)
 
+    window = MainWindow(OG)
     window.show()
-    sys.exit(chessGui.exec_())
+    sys.exit(CHESSGUI.exec_())
+
+
+
+if __name__ == "__main__":
+   load()
