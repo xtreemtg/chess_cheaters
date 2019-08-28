@@ -4,12 +4,11 @@ from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 import operator
 from shapely.geometry import LineString
-import sympy
 
 
 FILTER_THRESHOLD = 0.2
 NBINS = 18
-TEST_IMG_NAME = 'pics/IMG_1462.JPG'
+TEST_IMG_NAME = 'pics/IMG_1544.JPG'
 
 
 def pre_process_image(img, skip_dilate=False):
@@ -291,6 +290,29 @@ def plot_smart_squares(img, smart_squares):
     plt.show()
 
 
+def heat_map(img, smart_squares, filter_threshold=True):
+    n = len(smart_squares[0])
+    result = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            cropped = cut_from_rect(img, smart_squares[i][j])
+            result[i, j] = np.sum(cv2.Canny(cropped, 100, 200))
+    if filter_threshold:
+        threshold = np.median(result)
+        result[result < 1.3 * threshold] = 0
+    return result
+
+
+def convert_to_board(hm):
+    board = [['.' for _ in range(8)] for _ in range(8)]
+    for i in range(8):
+        for j in range(7, -1, -1):
+            if (i == 7 or hm[i + 1][j] == 0) and (hm[i][j] > 0):
+                board[i][j] = 'p'
+
+    return board
+
+
 def main():
     original = cv2.imread(TEST_IMG_NAME, cv2.IMREAD_GRAYSCALE)
     processed = pre_process_image(original)
@@ -319,6 +341,10 @@ def main():
     intersections = create_intersections(grid)
     smart_squares = create_smart_squares(intersections)
     plot_smart_squares(cropped, smart_squares)
+
+    hm = heat_map(cropped, smart_squares)
+    board = convert_to_board(hm)
+    print(board)
 
 
 if __name__ == '__main__':
