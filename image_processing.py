@@ -6,9 +6,24 @@ import operator
 from shapely.geometry import LineString
 
 
+from keras.utils import to_categorical
+from keras.models import load_model
+from keras.preprocessing import image
+from keras.models import model_from_json
+import json
+import pandas as pd
+from keras import optimizers
+
+
 FILTER_THRESHOLD = 0.2
 NBINS = 18
 TEST_IMG_NAME = 'pics/IMG_1544.JPG'
+
+img_height = 108
+img_width = 192
+CLASS_DICT = {'c': 0, 'k': 1, 'p': 2, 'q': 3}
+inv_dict = {v: k for k, v in CLASS_DICT.items()}
+model = None
 
 
 class CroppedPiece(object):
@@ -16,6 +31,27 @@ class CroppedPiece(object):
         self.img = img
         self.x = x
         self.y = y
+
+
+def setup_nn():
+    global model
+    with open('chess_vgg.json', 'r') as f:
+        model_json = json.load(f)
+
+    model = model_from_json(json.dumps(model_json))
+    model.load_weights('chess_vgg.h5')
+    model.summary()
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
+
+
+def classify_piece(img):
+    global model
+    nn_img = cv2.resize(img, (img_width, img_height))
+    nn_img = cv2.cvtColor(nn_img,cv2.COLOR_GRAY2RGB)
+    nn_img = np.expand_dims(nn_img, axis=0)
+    pred = model.predict(nn_img, batch_size=1)
+    pred_class = pred.argmax(axis=1)[0]
+    return inv_dict[pred_class]
 
 
 def pre_process_image(img, skip_dilate=False):
@@ -317,13 +353,20 @@ def heat_map(img, smart_squares, filter_threshold=True):
     return result
 
 
-def convert_to_board(hm):
+def convert_to_pawn_board(hm):
     board = [['.' for _ in range(8)] for _ in range(8)]
     for i in range(8):
         for j in range(7, -1, -1):
             if (i == 7 or hm[i + 1][j] == 0) and (hm[i][j] > 0):
                 board[i][j] = 'p'
 
+    return board
+
+
+def convert_to_board(pieces):
+    board = [['.' for _ in range(8)] for _ in range(8)]
+    for piece in pieces:
+        board[piece.x][piece.y] = classify_piece(piece.img)
     return board
 
 
@@ -342,6 +385,7 @@ def get_pieces_pics(hm, squares, img):
 
 
 def do_magic(path):
+    setup_nn()
     original = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     processed = pre_process_image(original)
     corners = find_corners_of_largest_polygon(processed)
@@ -357,7 +401,7 @@ def do_magic(path):
 
     hm = heat_map(cropped, smart_squares)
     pieces = get_pieces_pics(hm, smart_squares, cropped)
-    board = convert_to_board(hm)
+    board = convert_to_board(pieces)
     return board
 
 
