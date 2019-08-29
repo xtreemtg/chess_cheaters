@@ -17,11 +17,11 @@ from keras import optimizers
 
 FILTER_THRESHOLD = 0.2
 NBINS = 18
-TEST_IMG_NAME = 'pics/IMG_1544.JPG'
+TEST_IMG_NAME = 'pics/IMG_7138.JPG'
 
 img_height = 108
 img_width = 192
-CLASS_DICT = {'c': 0, 'k': 1, 'p': 2, 'q': 3}
+CLASS_DICT = {'r': 0, 'k': 1, 'p': 2, 'q': 3}
 inv_dict = {v: k for k, v in CLASS_DICT.items()}
 model = None
 
@@ -164,6 +164,8 @@ def create_lines(cropped):
     lines_pic = np.zeros(cropped.shape)
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 10, maxLineGap=10)
 
+    if type(lines) is not np.ndarray:
+        return 0, 0
     for line in lines:
         x1, y1, x2, y2 = line[0]
         cv2.line(lines_pic, (x1, y1), (x2, y2), (255, 0, 0), 1)
