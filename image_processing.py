@@ -27,10 +27,11 @@ model = None
 
 
 class CroppedPiece(object):
-    def __init__(self, img, x, y):
+    def __init__(self, img, x, y, is_white):
         self.img = img
         self.x = x
         self.y = y
+        self.is_white = is_white
 
 
 def setup_nn():
@@ -368,7 +369,10 @@ def convert_to_pawn_board(hm):
 def convert_to_board(pieces):
     board = [['.' for _ in range(8)] for _ in range(8)]
     for piece in pieces:
-        board[piece.x][piece.y] = classify_piece(piece.img)
+        classified = classify_piece(piece.img)
+        if piece.is_white:
+            classified = str.capitalize(classified)
+        board[piece.x][piece.y] = classified
     return board
 
 
@@ -382,8 +386,21 @@ def get_pieces_pics(hm, squares, img):
                 square1 = squares[i][j]
                 square_all = (square0[0], square1[1])
                 cropped = cut_from_rect(img, square_all)
-                cropped_pieces.append(CroppedPiece(cropped, i, j))
+                cropped_pieces.append(CroppedPiece(cropped, i, j, detect_color(img, squares, i, j, index_0)))
     return cropped_pieces
+
+
+def detect_color(img, squares, i, j, index_0):
+    is_white = 0
+    is_black = 0
+    for bla in range(index_0, i):
+        deviation = np.std(cut_from_rect(img, squares[bla][j]))
+        if bla+j % 2 == 0:
+            is_black += deviation
+        else:
+            is_white += deviation
+    return is_white > is_black
+
 
 
 def do_magic(path):
