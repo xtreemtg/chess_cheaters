@@ -108,6 +108,11 @@ class MainWindow(QWidget):
                 msg.setIcon(QMessageBox.Warning)
                 msg.setText(str(e))
                 msg.exec_()
+            except TypeError as e:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText(str(e))
+                msg.exec_()
 
 
     def predict_threads(self):

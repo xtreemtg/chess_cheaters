@@ -19,9 +19,9 @@ FILTER_THRESHOLD = 0.2
 NBINS = 18
 TEST_IMG_NAME = 'pics/IMG_7138.JPG'
 
-img_height = 200
-img_width = 200
-CLASS_DICT = {None: 0, 'r': 1, 'k': 2, 'p': 3}
+img_height = 108
+img_width = 192
+CLASS_DICT = {'k': 1, 'r': 0}
 inv_dict = {v: k for k, v in CLASS_DICT.items()}
 model = None
 
@@ -346,7 +346,7 @@ def heat_map(img, smart_squares, filter_threshold=True):
             result[i][j] = np.std(im_bw)
     if filter_threshold:
         threshold = np.max(result)
-        result[result < 0.7 * threshold] = 0
+        result[result < 0.8 * threshold] = 0
         hm_r = np.zeros(result.shape)
         for i in range(8):
             for j in range(7, -1, -1):
@@ -395,6 +395,13 @@ def get_pieces_pics(hm, squares, img):
 
 
 def detect_color(img, squares, i, j, index_0):
+    cropped = cut_from_rect(img, squares[i][j])
+    (thresh, im_bw) = cv2.threshold(cropped, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    center = int(cropped.shape[0]/2)
+    small_crop = im_bw[center-5:center+5, center-5:center+5]
+    return np.sum(small_crop) > 100
+
+
     is_white = 0
     is_black = 0
     for bla in range(index_0, i):
@@ -419,6 +426,7 @@ def do_magic(path):
     horizontal_lines, vertical_lines = split_horizontal_vertical(filtered_lines)
     grid = build_grid(horizontal_lines, vertical_lines, cropped)
 
+    plot_lines(grid, cropped.shape, cropped)
     intersections = create_intersections(grid)
     smart_squares = create_smart_squares(intersections)
 

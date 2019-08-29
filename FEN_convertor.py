@@ -9,19 +9,19 @@ class FEN_convertor():
     def _decide_castling(self):
         # TODO: make it more smart
         castle_str = ''
-        brd = self.matrix
+        board = self.matrix
         K, k, KR, QR, kr, qr = (7, 4), (0, 4), (7, 7), (7, 0), (0, 7), (0, 0)
-        if brd[K] != 'K' and brd[k] != 'k':
+        if board[K] != 'K' and board[k] != 'k':
             return '-'
-        if brd[K] == 'K':
-            if brd[KR] == 'R':
+        if board[K] == 'K':
+            if board[KR] == 'R':
                 castle_str += 'K'
-            if brd[QR] == 'R':
+            if board[QR] == 'R':
                 castle_str += 'Q'
-        if brd[k] == 'k':
-            if brd[kr] == 'r':
+        if board[k] == 'k':
+            if board[kr] == 'r':
                 castle_str += 'k'
-            if brd[qr] == 'r':
+            if board[qr] == 'r':
                 castle_str += 'q'
         castle_str = castle_str if len(castle_str) > 0 else '-'
         return castle_str
@@ -57,7 +57,6 @@ class FEN_convertor():
 
     def convert(self, whos_move):
         whos_move = 'b' if whos_move == 'black' else 'w'
-        self._decide_castling()
         piece_placement = ''
         for rank in self.matrix:
             piece_placement += self._get_rank_data(rank) + '/'
