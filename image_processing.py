@@ -11,6 +11,13 @@ NBINS = 18
 TEST_IMG_NAME = 'pics/IMG_1544.JPG'
 
 
+class CroppedPiece(object):
+    def __init__(self, img, x, y):
+        self.img = img
+        self.x = x
+        self.y = y
+
+
 def pre_process_image(img, skip_dilate=False):
     """Uses a blurring function, adaptive thresholding and dilation to expose the main features of an image."""
 
@@ -296,10 +303,17 @@ def heat_map(img, smart_squares, filter_threshold=True):
     for i in range(n):
         for j in range(n):
             cropped = cut_from_rect(img, smart_squares[i][j])
-            result[i, j] = np.sum(cv2.Canny(cropped, 100, 200))
+            _, lines_pic = create_lines(cropped)
+            result[i, j] = np.sum(lines_pic)
     if filter_threshold:
         threshold = np.median(result)
-        result[result < 1.3 * threshold] = 0
+        result[result < 2 * threshold] = 0
+        hm_r = np.zeros(result.shape)
+        for i in range(8):
+            for j in range(7, -1, -1):
+                if (i == 7 or result[i + 1][j] == 0) and (result[i][j] > 0):
+                    hm_r[i][j] = 1
+        result = hm_r
     return result
 
 
@@ -311,6 +325,20 @@ def convert_to_board(hm):
                 board[i][j] = 'p'
 
     return board
+
+
+def get_pieces_pics(hm, squares, img):
+    cropped_pieces = []
+    for i in range(8):
+        for j in range(7, -1, -1):
+            if hm[i][j] > 0:
+                index_0 = i - 2 if i-2 >= 0 else 0
+                square0 = squares[index_0][j]
+                square1 = squares[i][j]
+                square_all = (square0[0], square1[1])
+                cropped = cut_from_rect(img, square_all)
+                cropped_pieces.append(CroppedPiece(cropped, i, j))
+    return cropped_pieces
 
 
 def do_magic(path):
@@ -328,42 +356,45 @@ def do_magic(path):
     smart_squares = create_smart_squares(intersections)
 
     hm = heat_map(cropped, smart_squares)
+    pieces = get_pieces_pics(hm, smart_squares, cropped)
     board = convert_to_board(hm)
     return board
 
 
 def main():
-    original = cv2.imread(TEST_IMG_NAME, cv2.IMREAD_GRAYSCALE)
-    processed = pre_process_image(original)
-    corners = find_corners_of_largest_polygon(processed)
-    cropped = crop_and_warp(original, corners)
-    squares = infer_grid(cropped)
-    grid_lines = embed_sqaures(cropped, squares)
-    hough_lines, hough_lines_pic = create_lines(cropped)
+    # original = cv2.imread(TEST_IMG_NAME, cv2.IMREAD_GRAYSCALE)
+    # processed = pre_process_image(original)
+    # corners = find_corners_of_largest_polygon(processed)
+    # cropped = crop_and_warp(original, corners)
+    # squares = infer_grid(cropped)
+    # grid_lines = embed_sqaures(cropped, squares)
+    # hough_lines, hough_lines_pic = create_lines(cropped)
+    #
+    # fig, ax = plt.subplots(2, 2, figsize=(15, 15))
+    #
+    # ax[0, 0].imshow(original, cmap='gray')
+    # ax[0, 1].imshow(cropped, cmap='gray')
+    # ax[1, 0].imshow(hough_lines_pic, cmap='gray')
+    # ax[1, 1].imshow(grid_lines, cmap='gray')
+    # plt.show()
+    #
+    # filtered_lines = filter_lines(hough_lines)
+    # horizontal_lines, vertical_lines = split_horizontal_vertical(filtered_lines)
+    # grid = build_grid(horizontal_lines, vertical_lines, cropped)
+    #
+    # plt.figure(figsize=(15, 15))
+    # plt.imshow(plot_lines(grid, cropped.shape, cropped), cmap='gray')
+    # plt.show()
+    #
+    # intersections = create_intersections(grid)
+    # smart_squares = create_smart_squares(intersections)
+    # plot_smart_squares(cropped, smart_squares)
+    #
+    # hm = heat_map(cropped, smart_squares)
+    # board = convert_to_board(hm)
+    # print(board)
 
-    fig, ax = plt.subplots(2, 2, figsize=(15, 15))
-
-    ax[0, 0].imshow(original, cmap='gray')
-    ax[0, 1].imshow(cropped, cmap='gray')
-    ax[1, 0].imshow(hough_lines_pic, cmap='gray')
-    ax[1, 1].imshow(grid_lines, cmap='gray')
-    plt.show()
-
-    filtered_lines = filter_lines(hough_lines)
-    horizontal_lines, vertical_lines = split_horizontal_vertical(filtered_lines)
-    grid = build_grid(horizontal_lines, vertical_lines, cropped)
-
-    plt.figure(figsize=(15, 15))
-    plt.imshow(plot_lines(grid, cropped.shape, cropped), cmap='gray')
-    plt.show()
-
-    intersections = create_intersections(grid)
-    smart_squares = create_smart_squares(intersections)
-    plot_smart_squares(cropped, smart_squares)
-
-    hm = heat_map(cropped, smart_squares)
-    board = convert_to_board(hm)
-    print(board)
+    print(do_magic(TEST_IMG_NAME))
 
 
 if __name__ == '__main__':
