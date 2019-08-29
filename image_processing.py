@@ -19,9 +19,9 @@ FILTER_THRESHOLD = 0.2
 NBINS = 18
 TEST_IMG_NAME = 'pics/IMG_7138.JPG'
 
-img_height = 108
-img_width = 192
-CLASS_DICT = {'r': 0, 'k': 1, 'p': 2, 'q': 3}
+img_height = 200
+img_width = 200
+CLASS_DICT = {None: 0, 'r': 1, 'k': 2, 'p': 3}
 inv_dict = {v: k for k, v in CLASS_DICT.items()}
 model = None
 
@@ -370,9 +370,10 @@ def convert_to_board(pieces):
     board = [['.' for _ in range(8)] for _ in range(8)]
     for piece in pieces:
         classified = classify_piece(piece.img)
-        if piece.is_white:
-            classified = str.capitalize(classified)
-        board[piece.x][piece.y] = classified
+        if classified:
+            if piece.is_white:
+                classified = str.capitalize(classified)
+            board[piece.x][piece.y] = classified
     return board
 
 
