@@ -37,7 +37,7 @@ class MainWindow(QWidget):
 
     def __init__(self, board):
         """
-        Initialize the chessboard.
+        Initialize the chessboard..
         """
         super().__init__()
 
